@@ -428,6 +428,7 @@
         roulette.append(status);
         roulette.appendTo($('#rouletteArea')).hide().fadeIn(1000);
         var r = new HentaiRoulette(id);
+        r.setIrof($("#irof").get(0).checked);
         return r;
       }
 

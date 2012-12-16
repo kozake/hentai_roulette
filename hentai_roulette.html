@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>変態ルーレット</title>
+
+  <style>
+    .button {
+        background-color:#4b3f39;
+        font-family: 'Open Sans', sans-serif;
+        font-size:12px;
+        text-decoration:none;
+        color:#fff;
+        position:relative;
+        padding:10px 20px;
+        padding-right:50px;
+        border-radius: 5px;
+        box-shadow: inset 0px 1px 0px #9e8d84, 0px 5px 0px 0px #322620, 0px 10px 5px #999;
+    }
+     
+    .button:active {
+        top:3px;
+        box-shadow: inset 0px 1px 0px #9e8d84, 0px 2px 0px 0px #322620, 0px 5px 3px #999;
+    }
+     
+    .button::before {
+        background-color:#322620;
+        background-repeat:no-repeat;
+        background-position:center center;
+        content:"";
+        width:20px;
+        height:20px;
+        position:absolute;
+        right:15px;
+        top:50%;
+        margin-top:-9px;
+        border-radius: 50%;
+        box-shadow: inset 0px 1px 0px #19120f, 0px 1px 0px #827066;
+    }
+     
+    .button:active::before {
+        top:50%;
+        margin-top:-12px;
+        box-shadow: inset 0px 1px 0px #827066, 0px 3px 0px #19120f, 0px 6px 3px #382e29;
+    }
+
+    .roulette {
+      float: left;
+      margin : 20px;
+    }
+
+    .disk {
+    }
+
+    .arrow {
+    }
+
+    .status {
+    }
+
+  </style>
+
+  <script src="js/jquery-1.6.2.min.js"></script>
+  <script src="js/jquery-ui-1.8.16.custom.min.js"></script>
+  <script src="js/jQueryRotate.2.1.js"></script>
+
+  <script language="javascript" type="text/javascript">
+
+    // 変態ルーレットクラス
+    function HentaiRoulette(id) {
+
+      // ルーレット盤描画用キャンバス
+      this.diskCanvas = $('#disk_' + id).get(0);
+
+      // 矢印描画用キャンバス
+      this.arrowCanvs = $('#arrow_' + id).get(0);
+
+      // 状態表示用キャンバス
+      this.statusCanvas = $('#status_' + id).get(0);
+
+      // 現在の回転度数
+      this.curr = 0;
+
+      // ターゲットの回転度数
+      this.target = 0;
+
+      // へんたいろふかどうか
+      this.isIrof = false;
+
+      // ルーレット比率を作成
+      // "変態Play!", "Yes", "No"の比率が大体8:1:1
+      // になるように作成する。また、1比率が3%未満にならないよう調整する。
+      // 処理の行いやすさの為、最終的な比率の合計が大体360（度）になるよう調整する。
+      this.createRate = function() {
+        var r = [8,1,1,8,1,1].map(function(n) { return n * Math.random() });
+        var sum = r.reduce(function(a,b) { return a + b });
+        while (!r.every(function(n) { return (n / sum) > 0.03 })) {
+          var average = sum / r.length;
+          r = r.map(function(n) { return n + average });
+          sum = r.reduce(function(a,b) { return a + b });
+        }
+        r = r.map(function(n) { return 360 * (n / sum) });
+        return r;
+      }
+
+      // ルーレット比率
+      this.rate = this.createRate();
+
+      // 線の色
+      this.strokeStyles = ["#FF74CD", "#18FFCD", "#1874CD"];
+
+      // 塗りつぶし色
+      this.fillStyles = ["#FFE2FE", "#C6FFFE", "#C6E2FE"];
+
+      // ルーレット文字
+      this.texts = ["変態Play!", "Yes", "No"];
+
+      // ルーレットの矢印をクリア
+      this.clearArrow = function() {
+        var context = this.arrowCanvs.getContext("2d");
+        context.clearRect(0,0,this.arrowCanvs.width, this.arrowCanvs.height);
+      }
+
+      // ルーレットの矢印を描画
+      this.drawArrow = function() {
+        this.clearArrow();
+        var context = this.arrowCanvs.getContext("2d");
+
+        if (this.isIrof) {
+          return;
+        }
+
+        var sel = this.selected();
+        context.lineWidth=2;
+        context.strokeStyle = this.strokeStyles[sel];
+        context.fillStyle = this.fillStyles[sel];
+        context.beginPath();
+        context.moveTo(this.arrowCanvs.width / 2, this.arrowCanvs.height);
+        context.lineTo(this.arrowCanvs.width / 2 - 15, 0);
+        context.lineTo(this.arrowCanvs.width / 2 + 15, 0);
+        context.closePath();
+        context.fill();
+        context.stroke();
+      }
+
+      // ルーレットの選択をクリア
+      this.clearStatus = function() {
+        var context = this.statusCanvas.getContext("2d");
+        context.clearRect(0,0,this.statusCanvas.width, this.statusCanvas.height);
+      }
+
+      // ルーレットの選択を描画
+      this.drawStatus = function() {
+        this.clearStatus();
+        var context = this.statusCanvas.getContext("2d");
+
+        var sel = this.selected();
+        context.lineWidth=2;
+        context.fillStyle = this.strokeStyles[sel];
+        context.font = "20px 'Arial'";
+        context.textAlign = "left";
+        context.fillText(this.selectedText(), 0, 25, "300");
+      }
+
+      // ルーレット盤をクリア
+      this.clearDisk = function() {
+        var context = this.diskCanvas.getContext("2d");
+        context.clearRect(0,0,this.diskCanvas.width, this.diskCanvas.height);
+      }
+
+      // ルーレット盤を描画
+      this.drawDisk = function() {
+        this.clearDisk();
+        var context = this.diskCanvas.getContext("2d");
+
+        var rate_sum = this.rate.reduce(function(a,b) { return a + b });
+
+        var cp = this.diskCanvas.width / 2;
+        var r = this.diskCanvas.width / 2;
+
+        context.lineWidth = 2;
+
+        // 円盤を描画
+        var acc = 0;
+        for (var i = 0; i < this.rate.length; i++) {
+          context.strokeStyle = this.strokeStyles[i % this.strokeStyles.length];
+          context.fillStyle = this.fillStyles[i % this.fillStyles.length];
+
+          var fromR = 2 * Math.PI * (acc / rate_sum);
+          var toR = 2 * Math.PI * ((acc + this.rate[i]) / rate_sum);
+
+          context.beginPath();
+          context.moveTo(cp, cp);
+          context.lineTo(cp + Math.cos(fromR) * r, cp + Math.sin(fromR) * r);
+          context.arc(cp, cp, r, fromR, toR, false);
+          context.closePath();
+          context.fill();
+          context.stroke();
+
+          acc += this.rate[i];
+        }
+
+        // 文字を描画
+        var acc = 0;
+        for (var i = 0; i < this.rate.length; i++) {
+          var fromR = 2 * Math.PI * (acc / rate_sum);
+          var toR = 2 * Math.PI * ((acc + this.rate[i]) / rate_sum);
+
+          context.fillStyle = this.strokeStyles[i % this.strokeStyles.length];
+          context.font = "20px 'Arial'";
+          context.textAlign = "center";
+          context.fillText(
+              this.texts[i % this.texts.length],
+              cp + Math.cos((fromR + toR) / 2) * (r / 3 * 2),
+              cp + Math.sin((fromR + toR) / 2) * (r / 3 * 2),
+              "80");
+
+          acc += this.rate[i];
+        }
+      }
+
+      // ルーレット盤を描画
+      this.drawIrof = function() {
+        this.clearDisk();
+
+        // これっくらいの♪canvasにっ♪
+        var ctx = this.diskCanvas.getContext("2d");
+        ctx.beginPath();
+        ctx.lineWidth = 5;
+        ctx.fillStyle = "#FFF";
+        ctx.strokeStyle = "#000";
+        ctx.strokeRect(0, 0, 300, 300);
+
+        // ぐるっと輪郭ちょっと描いて♪
+        ctx.beginPath();
+        ctx.lineWidth = 10;
+        ctx.arc(242,250,117,172 * Math.PI / 180, 214 * Math.PI / 180,true);
+        ctx.stroke();
+
+        // ぱっくぱっく開いたお口をつっけて♪
+        ctx.lineTo(210, 255);
+        ctx.closePath();
+        ctx.stroke();
+
+        // ふっきだっしはっ♪ベッジェきょっくせんっ♪
+        ctx.beginPath();
+        ctx.moveTo(50, 30);
+        ctx.lineTo(153, 30);
+        ctx.arc(153, 60, 30, 270 * Math.PI / 180, 90 * Math.PI / 180, false);
+        ctx.lineTo(105, 90);
+        ctx.bezierCurveTo(105, 90, 90, 105, 129, 141);
+        ctx.bezierCurveTo(90, 135, 66, 120, 81, 90);
+        ctx.lineTo(57,90);
+        ctx.arc(50, 60, 30, 90 * Math.PI / 180, 270 * Math.PI / 180, false);
+        ctx.stroke();
+
+        // 点、点、点、点、つっぶやっいて♪
+        ctx.beginPath();
+        ctx.fillStyle = "#000";
+        ctx.arc(51, 60, 5, 0, Math.PI * 2 ,true);
+        ctx.arc(84, 60, 5, 0, Math.PI * 2 ,true);
+        ctx.arc(120, 60, 5, 0, Math.PI * 2 ,true);
+        ctx.arc(154, 60, 5, 0, Math.PI * 2 ,true);
+        ctx.fill();
+
+        // あーなを開ーけたらいろふさん♪
+        ctx.beginPath();
+        ctx.arc(255,204,15,0,Math.PI * 2,true);
+        ctx.stroke();
+      }
+
+      // ルーレットを描画
+      this.draw = function() {
+
+        if (this.isIrof) {
+          this.drawIrof();
+          this.drawStatus();
+        } else {
+          this.drawArrow();
+          this.drawDisk();
+          this.drawStatus();
+        }
+      }
+
+      this.setIrof = function(b) {
+        this.isIrof = b;
+        this.draw();
+      }
+
+      // ルーレット削除
+      this.remove = function() {
+        $("#roulette_" + id).fadeOut(300).queue( function(){ this.remove() })
+      }
+
+      // 現在、ルーレットが回っているかどうか
+      this.isRotate = function() {
+        return this.target != this.curr;
+      }
+
+      this.endRotateCallback = null;
+
+      // ルーレット開始
+      this.start = function(callback) {
+        if (!this.isRotate()) {
+          this.target += Math.random() * 5000 + 5000;
+          this.endRotateCallback = callback
+        }
+      }
+
+      // ルーレット回転
+      this.rotate = function() {
+        var sa = this.target - this.curr;
+        this.curr += sa / 10;
+        $('#' + this.diskCanvas.id).rotate(this.curr);
+        if (sa < 1) {
+          this.curr = this.curr % 360;
+          this.target = this.curr;
+          if (this.endRotateCallback != null) {
+            this.endRotateCallback(this);
+            this.endRotateCallback = null;
+          }
+        }
+        this.drawArrow();
+        this.drawStatus();
+      }
+
+      // 現在選択されている状態を返します。
+      // 0: 変態Play!
+      // 1: Yes
+      // 2: No
+      this.selected = function() {
+        var c = (3 / 4) * 360 + 360;
+        var s = this.curr % 360;
+        var i = 0;
+        while(c > s) {
+          s += this.rate[i % 6];
+          i++;
+        }
+        return (--i) % 3;
+      }
+
+      // 現在選択されている状態のテキストを返します。
+      this.selectedText = function() {
+        if (this.isIrof) {
+          return "へんたいろふ!";
+        } else {
+          return this.texts[this.selected()];
+        }
+      }
+    }
+
+    $(function() {
+
+      // スタートボタン押下時
+      $('#start').click(function() {
+        roulettes.forEach(function(r) { r.start(endRotate) });
+        $('#start').attr('disabled', 'true');
+        $('#add').attr('disabled', 'true');
+        $('#delete').attr('disabled', 'true');
+        $('#irof').attr('disabled', 'true');
+      });
+
+      function endRotate(roulette) {
+        if (roulettes.every(function(r) { return !r.isRotate() })) {
+          $('#start').remove();
+          $('#add').remove();
+          $('#delete').remove();
+
+          var tweet = "";
+          if (roulettes.every(function(r) { return r.isIrof })) {
+            tweet = "へんたいろふ!!";
+          } else if (roulettes.every(function(r) { return r.selected() == 0})) {
+            tweet = "変態ｷﾀー(°∀°)ー!!";
+          } else
+          if (roulettes.every(function(r) { return r.selected() == 1})) {
+            tweet = "YES、変態(**´Д｀**)";
+          } else
+          if (roulettes.every(function(r) { return r.selected() == 2})) {
+            tweet = "嫌よ、嫌よも。。";
+          } else {
+            tweet = "残念、変態でした!!";
+          }
+          $('#controlArea').append($("<b><br>" + tweet　+ " （もう一度ルーレットする場合はF5ボタンを押してね！）<br></b>"));
+          createTwitterButton(tweet);
+        }
+      }
+
+      // 追加押下時
+      $('#add').click(function() {
+        var newr = createRoulette();
+        roulettes.push(newr);
+        newr.draw();
+      });
+
+      // 削除押下時
+      $('#delete').click(function() {
+        if (roulettes.length > 1) {
+          var delr = roulettes.pop();
+          delr.remove();
+        }
+      });
+
+      $("#irof").click(function() {
+        var chk = this.checked;
+        roulettes.forEach(function(r) { r.setIrof(chk); });
+      });
+
+      // 60フレームで呼ばれるアニメーション処理
+      function anime() {
+        roulettes.forEach(function(r) { r.rotate(); });
+      }
+
+      // ルーレットのID払い出し
+      var idseq = 0;
+      function newid() {
+        return "r" + idseq++;
+      }
+
+      // ルーレット作成
+      function createRoulette() {
+        var id = newid();
+        var roulette = $("<div class='roulette' id='roulette_" + id + "'></div>");
+        var arrow = $("<div class='arrow' ><canvas width='300' height='30' id='arrow_" + id + "'></canvas></div>");
+        var disk = $("<div class='disk' ><canvas width='300' height='300' id='disk_" + id + "'></canvas></div>");
+        var status = $("<div class='status' ><canvas width='300' height='30' id='status_" + id + "'></canvas></div>");
+        roulette.append(arrow);
+        roulette.append(disk);
+        roulette.append(status);
+        roulette.appendTo($('#rouletteArea')).hide().fadeIn(1000);
+        var r = new HentaiRoulette(id);
+        return r;
+      }
+
+      // ツイッターボタン作成
+      function createTwitterButton(tweet) {
+        var newlink = $("<a href='https://twitter.com/share' class='twitter-share-button' data-text='" + tweet + "' data-lang='ja' data-hashtags='HentaiRoulette'>ツイート</a>");
+        $('#twitterArea').append(newlink);
+
+        var js,fjs=document.getElementsByTagName("script")[0];
+        if(!document.getElementById("twitter-wjs")){
+          js=document.createElement("script");
+          js.id="twitter-wjs";
+          js.src="//platform.twitter.com/widgets.js";
+          fjs.parentNode.insertBefore(js,fjs);
+        }
+      }
+
+      var roulettes = [createRoulette(), createRoulette()];
+      roulettes.forEach(function(r) { r.draw() });
+      setInterval(anime, 33);
+    });
+  </script>
+</head>
+<body>
+  <div id="controlArea" style="clear : both; height: 60px;">
+    <button type="button" class="button" id="add">ルーレット追加</button>
+    <button type="button" class="button" id="delete">ルーレット削除</button>
+    <button type="button" class="button" id="start">ルーレットスタート!!</button>
+    元ネタは<a href="">こちら</a>
+  </div>
+  <div id="irofArea">
+    <label><input type="checkbox" id="irof"/> いろふさん</label>
+  </div>
+  <div id="rouletteArea">
+  </div>
+  <div id="twitterArea" style="clear : both">
+  </div>
+</body>
+</html>
